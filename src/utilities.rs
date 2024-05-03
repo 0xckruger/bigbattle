@@ -3,8 +3,6 @@ use std::io::Write;
 use crossterm::{cursor, QueueableCommand, terminal};
 use crossterm::style::Print;
 
-mod utilities;
-
 pub fn print_message(message: impl Display, position: (u16, u16)) {
     let mut stdout = std::io::stdout();
 
