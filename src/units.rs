@@ -1,169 +1,161 @@
-use crate::playingfield::PlayingField;
-use anyhow::{anyhow, Result};
-use rand::prelude::*;
+// units.rs
+use std::cmp::max;
+use rand::{Rng, thread_rng};
 use std::fmt;
-use std::fmt::Formatter;
+use enum_derived::Rand;
+use rnglib::{Language, RNG};
+use crate::battleground::Battleground;
+use crate::utilities::print_message;
 
-#[allow(dead_code)]
-#[derive(Debug)]
-pub(crate) enum Unit {
-    Character(CharacterUnit),
-}
-impl Clone for Unit {
-    fn clone(&self) -> Self {
-        match self {
-            Unit::Character(chara) => Unit::Character(chara.clone()),
-        }
-    }
-}
+const MESSAGE_COORDINATES: (u16, u16) = (5, 15);
 
-impl fmt::Display for Unit {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Unit::Character(chara) => write!(f, "{}", chara),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub(crate) enum Race {
+#[derive(Debug, Clone, Rand, Hash, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Race {
     Goblin,
     Orc,
+    Elf,
+    Dwarf,
+    Skeleton,
 }
+
 impl fmt::Display for Race {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Race::Goblin => write!(f, "Goblin"),
             Race::Orc => write!(f, "Orc"),
+            Race::Elf => write!(f, "Elf"),
+            Race::Dwarf => write!(f, "Dwarf"),
+            Race::Skeleton => write!(f, "Skeleton"),
         }
     }
 }
 
 impl Race {
-    fn weapon(&self) -> String {
+    fn weapon(&self) -> &str {
         match self {
-            Race::Goblin => String::from("Magical Knife 🗡️"),
-            Race::Orc => String::from("Big Hammer 🔨")
+            Race::Goblin => "Rusty Knife 🔪",
+            Race::Orc => "Big Club 🏏",
+            Race::Elf => "Magical Sword 🗡️",
+            Race::Dwarf => "Big Hammer 🔨",
+            Race::Skeleton => "Bone 🦴",
+        }
+    }
+    pub(crate) fn symbol(&self) -> &str {
+        match self {
+            Race::Goblin => "👺",
+            Race::Orc => "🧌",
+            Race::Elf => "🧝",
+            Race::Dwarf => "🧔🏽",
+            Race::Skeleton => "🩻",
         }
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct CharacterUnit {
-    pub(crate) name: String,
-    health: u16,
-    power_level: u8,
-    opponent_position: Option<(i32, i32)>,
-    race: Race,
-    pub(crate) position: (i32, i32),
+#[derive(Debug, Clone)]
+pub struct CharacterUnit {
+    pub name: String,
+    pub(crate) health: u16,
+    pub(crate) power_level: u8,
+    pub race: Race,
+    pub position: (i32, i32),
     pub(crate) alive: bool,
 }
 
 impl CharacterUnit {
-    pub(crate) fn new(
+    pub fn new(
         name: String,
         health: u16,
         power_level: u8,
         race: Race,
         position: (i32, i32),
-        alive: bool,
     ) -> Self {
         CharacterUnit {
             name,
             health,
             power_level,
-            opponent_position: None,
             race,
             position,
-            alive,
+            alive: true,
         }
     }
-}
 
-impl Clone for CharacterUnit {
-    fn clone(&self) -> Self {
-        CharacterUnit {
-            name: self.name.clone(),
-            health: self.health,
-            power_level: self.power_level,
-            opponent_position: self.opponent_position.clone(), // Clone the Option<Box<MaybeUnit>>
-            race: self.race,
-            position: self.position,
-            alive: self.alive,
-        }
+    pub fn new_random() -> Self {
+        let race = Race::rand();
+        let name = random_name(race.clone());
+        let health = 100;
+        let power_level = random_powerlevel();
+        let position = (-1, -1);
+        CharacterUnit::new(
+            name,
+            health,
+            power_level,
+            race,
+            position,
+        )
     }
-}
 
-impl fmt::Display for CharacterUnit {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "\"{}\" @ ({}, {})\nRace: {}\nHealth: {}\nPower Level: {}\nFighting:",
-            self.name, self.position.0, self.position.1, self.race, self.health, self.power_level
-        )?;
-
-        match &self.opponent_position {
-            None => write!(f, " Nobody")?,
-            Some((x, y)) => write!(f, "Opponent at ({}, {})", x, y)?,
-        }
-
-        write!(f, "\n")
-    }
-}
-
-impl CharacterUnit {
-    pub(crate) fn move_unit(
+    pub fn move_unit(
         &mut self,
-        playing_field: &mut PlayingField,
+        playing_field: &mut Battleground,
         direction: char,
         spaces: i32,
-    ) -> Result<(i32, i32)> {
-        let mut new_coordinate = self.position.clone();
-        match direction {
-            'n' => new_coordinate.0 -= spaces,
-            's' => new_coordinate.0 += spaces,
-            'e' => new_coordinate.1 += spaces,
-            'w' => new_coordinate.1 -= spaces,
-            'r' => return self.move_unit(playing_field, random_direction(), spaces),
-            _ => return Err(anyhow!("Received an unknown direction!: {}", direction)),
-        }
-
-        match playing_field.place_unit(self, new_coordinate.0, new_coordinate.1) {
-            Ok(existing_opponent) => {
-                match existing_opponent {
-                    Some(winner) => {
-                        if winner.name == self.name {
-                            println!("{} won a fight to get to new position", self.name);
-                            Ok((new_coordinate.0, new_coordinate.1))
-                        } else {
-                            println!("Lost a fight and died. RIP: {}", self.name);
-                            Ok((-1, -1))
-                        }
-                    }
-                    None => {
-                        println!("Unit moved");
-                        Ok((new_coordinate.0, new_coordinate.1))
-                    }
-                }
+    ) -> Option<(i32, i32)> {
+        match playing_field.move_unit(self, direction, spaces) {
+            Some(position) => {
+                self.position = position;
+                Option::from(position)
             }
-            Err(e) => Err(e),
+            None => None
         }
     }
 
-    pub(crate) fn fight(&mut self, opponent: &mut CharacterUnit) -> bool {
+    pub fn move_unit_randomly(&mut self, bg: &mut Battleground) -> Option<(i32, i32)> {
+        let mut rng = thread_rng();
+        let range = 1..=max(bg.height, bg.width);
+        let spaces = rng.gen_range(range);
+
+        self.move_unit(bg,'r', spaces as i32)
+    }
+
+    pub fn fight(&mut self, opponent: &CharacterUnit) -> bool {
         if self.power_level > opponent.power_level {
-            println!("{} DESTROYS {} with their {}", self.name, opponent.name, self.race.weapon());
+            print_message(format!(
+                "{} DESTROYS {} with their {}",
+                self.name,
+                opponent.name,
+                self.race.weapon())
+            , MESSAGE_COORDINATES);
             true
-        } else {
-            println!("{} FALLS to {}'s {}", self.name, opponent.name, opponent.race.weapon());
+        } else if self.power_level < opponent.power_level {
+            print_message(format!(
+                "{} FALLS to {}'s {}",
+                self.name,
+                opponent.name,
+                opponent.race.weapon())
+            , MESSAGE_COORDINATES);
             false
+        }
+        else {
+            print_message("An equal matched battle!", (20, 20));
+            return thread_rng().gen_bool(0.5)
         }
     }
 }
 
-fn random_direction() -> char {
-    let letters = ['n', 's', 'e', 'w'];
+fn random_name(race: Race) -> String {
+    let rng;
+    match race {
+        Race::Elf => {rng = RNG::try_from(&Language::Elven).unwrap()},
+        Race::Orc => {rng = RNG::try_from(&Language::Demonic).unwrap()},
+        Race::Goblin => {rng = RNG::try_from(&Language::Goblin).unwrap()},
+        Race::Dwarf => {rng = RNG::try_from(&Language::Roman).unwrap()},
+        Race::Skeleton => {rng = RNG::try_from(&Language::Curse).unwrap()},
+    }
+    rng.generate_name()
+}
+
+fn random_powerlevel() -> u8 {
     let mut rng = thread_rng();
-    let random_index = rng.gen_range(0..letters.len());
-    letters[random_index]
+    let random_u8: u8 = rng.gen();
+    random_u8
 }

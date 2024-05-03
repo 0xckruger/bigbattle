@@ -1,87 +1,76 @@
-use crate::playingfield::PlayingField;
-use crate::units::{CharacterUnit, Race};
+// main.rs
 
-mod playingfield;
+use std::thread::sleep;
+use std::time::Duration;
+use clap::Parser;
+use crate::battleground::Battleground;
+
+
+mod battleground;
 mod units;
+mod utilities;
+
+
+/// A simple game with units on a playing field
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Height of the playing field
+    #[arg(value_parser = clap::value_parser!(u16).range(1..=100))]
+    height: u16,
+
+    /// Width of the playing field
+    #[arg(value_parser = clap::value_parser!(u16).range(1..=100))]
+    width: u16,
+
+    /// Number of players (units)
+    #[arg(value_parser = clap::value_parser!(u16).range(1..=50))]
+    player_count: u16,
+
+    /// Time in milliseconds between each unit move
+    #[arg(value_parser = clap::value_parser!(u64))]
+    milliseconds: u64,
+}
+
+
+fn initialize_battleground(height: i32, width: i32, player_count: i32) -> Battleground {
+    let mut battleground = Battleground::new(width as usize, height as usize);
+    for _ in 0..player_count {
+        let new_unit = units::CharacterUnit::new_random();
+        match battleground.add_unit_random_position(new_unit) {
+            Ok(()) => continue,
+            Err(e) => {
+                eprintln!("{}", e);
+                break;
+            }
+        }
+    }
+    battleground
+}
+
+fn start_battle(mut bg: Battleground, print_sleep_duration: Duration) {
+    while let None = bg.is_race_dominant() {
+        bg.get_and_move_random_unit();
+        bg.print_race_counts();
+        print_battleground(&bg, print_sleep_duration).expect("Couldn't print battlefield");
+    }
+    println!("It's over! The {}s won! THE END", bg.is_race_dominant().unwrap());
+
+}
+
+fn print_battleground(battleground: &Battleground, sleep_ms: Duration) -> Result<(), std::io::Error> {
+    battleground.get_field_string();
+    sleep(sleep_ms);
+
+    Ok(())
+}
 
 fn main() {
-    let mut battleground = PlayingField {
-        height: 5,
-        width: 5,
-        units: vec![],
-    };
-    battleground.initialize();
+    let args = Args::parse();
 
-    let mut goblin1 = CharacterUnit::new("Gorgo".to_string(), 100, 1, Race::Goblin, (0, 0), true);
-    let mut orc1 = CharacterUnit::new("Orko".to_string(), 100, 1, Race::Orc, (4, 4), true);
-    let orc2 = CharacterUnit::new("Orgo".to_string(), 100, 2, Race::Orc, (1, 3), true);
+    let sleep_duration = Duration::from_millis(args.milliseconds);
 
-    battleground.units[0][0] = Some(goblin1.clone());
-    battleground.units[4][4] = Some(orc1.clone());
-    battleground.units[2][1] = Some(orc2.clone());
+    let battleground = initialize_battleground(args.height.into(), args.width.into(), args.player_count.into());
 
-    match battleground.unit_at(0, 0) {
-        Ok(unit) => match unit {
-            Some(c) => println!("{}", c),
-            None => println!("Empty space"),
-        },
-        Err(e) => println!("ERROR: {}", e),
-    }
-
-    print!("{}", battleground);
-
-    match goblin1.move_unit(&mut battleground, 's', 1) {
-        Ok(new_position) => {
-            println!(
-                "{goblin1} is at {}, {} now",
-                new_position.0, new_position.1
-            );
-            print!("{}", battleground);
-        }
-        Err(e) => eprintln!("{}", e),
-    }
-
-    match orc1.move_unit(&mut battleground, 'n', 1) {
-        Ok(new_position) => {
-            println!(
-                "{orc1} is at {}, {} now",
-                new_position.0, new_position.1
-            );
-            print!("{}", battleground);
-        }
-        Err(e) => eprintln!("{}", e),
-    }
-
-    match orc1.move_unit(&mut battleground, 'w', 3) {
-        Ok(new_position) => {
-            println!(
-                "{orc1} is at {}, {} now",
-                new_position.0, new_position.1
-            );
-            print!("{}", battleground);
-        }
-        Err(e) => eprintln!("{}", e),
-    }
-
-    match goblin1.move_unit(&mut battleground, 'e', 1) {
-        Ok(new_position) => {
-            println!(
-                "{goblin1} is at {}, {} now",
-                new_position.0, new_position.1
-            );
-            print!("{}", battleground);
-        }
-        Err(e) => eprintln!("{}", e),
-    }
-
-    match orc1.move_unit(&mut battleground, 'n', 1) {
-        Ok(new_position) => {
-            println!(
-                "{orc1} is at {}, {} now",
-                new_position.0, new_position.1
-            );
-            print!("{}", battleground);
-        }
-        Err(e) => eprintln!("{}", e),
-    }
+    start_battle(battleground, sleep_duration);
 }
